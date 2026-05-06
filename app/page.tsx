@@ -36,7 +36,7 @@ const BPMS  = [70, 80, 90, 100, 110, 120, 130, 140];
 // ============================================================
 // AUDIO VISUALIZER HOOK
 // ============================================================
-const useVisualizer = (active) => {
+const useVisualizer = (active:boolean) => {
   const [bars, setBars] = useState(Array(32).fill(4));
   useEffect(() => {
     if (!active) { setBars(Array(32).fill(4)); return; }
