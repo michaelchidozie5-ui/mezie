@@ -67,7 +67,7 @@ const initiatePaystackPayment = ({ trackData, email, onSuccess, onClose }) => {
   if (typeof window === "undefined") return;
 
   // Demo mode fallback if Paystack script not loaded
-  if (!window.PaystackPop) {
+  if (!(window as any). paystackPop {
     console.warn("Paystack script not loaded — running demo mode");
     setTimeout(() => onSuccess({ reference: "demo_ref_" + Date.now() }), 1500);
     return;
