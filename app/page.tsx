@@ -67,13 +67,13 @@ const initiatePaystackPayment = ({ trackData, email, onSuccess, onClose }) => {
   if (typeof window === "undefined") return;
 
   // Demo mode fallback if Paystack script not loaded
-  if (!(window as any). paystackPop {
+  if (!window as any).PaystackPop) {
     console.warn("Paystack script not loaded — running demo mode");
     setTimeout(() => onSuccess({ reference: "demo_ref_" + Date.now() }), 1500);
     return;
   }
 
-  const handler = window.PaystackPop.setup({
+  const handler = (window as any).PaystackPop.setup({
     key: CONFIG.PAYSTACK_PUBLIC_KEY,
     email: email || "customer@mezie.app",
     amount: CONFIG.PRICE_NGN * 100, // Paystack uses kobo (₦1 = 100 kobo)
