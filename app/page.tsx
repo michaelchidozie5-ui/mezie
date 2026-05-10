@@ -1,5 +1,3 @@
-// @ts-nocheck
-export const dynamic = 'force-dynamic';
 "use client";
 import { useState, useEffect, useRef } from "react";
 // ============================================================
@@ -13,7 +11,7 @@ const CONFIG = {
   SUNO_API_KEY: "YOUR_SUNO_API_KEY_HERE",
   PRICE_NGN: 4500,   // ₦4,500 (~$3 USD) — adjust to your exchange rate
   PRICE_USD: 3,
-  APP_URL: "https://mezie.app",
+  APP_URL: "https://mezie-studio.vercel.app"
 };
 
 // ----- GENRE DATA -----
@@ -573,4 +571,3 @@ export default function MezieApp() {
     </div>
   );
 }
-// Verson 2.0 - final Deployment
