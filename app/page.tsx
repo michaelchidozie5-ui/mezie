@@ -1,573 +1,612 @@
 "use client";
-import { useState, useEffect, useRef } from "react";
-// ============================================================
-// MEZIE — Full Production App
-// Integrates: Suno AI (beats) + Paystack (payments) + Deployment
-// ============================================================
 
-// ----- CONFIG (replace with your real keys after signup) -----
-const CONFIG = {
-  PAYSTACK_PUBLIC_KEY: "pk_live_YOUR_PAYSTACK_PUBLIC_KEY_HERE", // from paystack.com dashboard
-  SUNO_API_KEY: "YOUR_SUNO_API_KEY_HERE",
-  PRICE_NGN: 4500,   // ₦4,500 (~$3 USD) — adjust to your exchange rate
-  PRICE_USD: 3,
-  APP_URL: "https://mezie-studio.vercel.app"
-};
+import React, { useState, useRef, useEffect } from "react";
+import { 
+  Mic, 
+  Disc, 
+  Layers, 
+  Music, 
+  Sparkles, 
+  Play, 
+  Pause, 
+  Square, 
+  Radio, 
+  Volume2, 
+  CheckCircle2, 
+  RefreshCw, 
+  Sliders, 
+  Download,
+  Flame,
+  Zap,
+  HelpCircle,
+  Menu,
+  X,
+  User,
+  LogOut,
+  ChevronRight,
+  TrendingUp,
+  Headphones,
+  SlidersHorizontal,
+  FolderHeart
+} from "lucide-react";
 
-// ----- GENRE DATA -----
-const GENRES = [
-  { id: "hiphop",    label: "Hip-Hop",   icon: "🎤", color: "#FF4D00", sunoStyle: "hip hop trap, 808 bass, hard hitting drums" },
-  { id: "rnb",       label: "R&B",       icon: "🎷", color: "#C850C0", sunoStyle: "smooth r&b, neo soul, silky production" },
-  { id: "afrobeats", label: "Afrobeats", icon: "🥁", color: "#FFB800", sunoStyle: "afrobeats, afropop, naija percussion, amapiano" },
-  { id: "african",   label: "African",   icon: "🪘", color: "#00C853", sunoStyle: "african highlife, bongo flava, gqom, juju music" },
-  { id: "gospel",    label: "Gospel",    icon: "🙏", color: "#7C4DFF", sunoStyle: "gospel, christian worship, praise music, choir" },
-  { id: "reggae",    label: "Reggae",    icon: "🌿", color: "#00BFA5", sunoStyle: "reggae, dancehall, roots, riddim" },
-  { id: "jazz",      label: "Jazz",      icon: "🎺", color: "#FF6D00", sunoStyle: "jazz, bebop, neo soul jazz, smooth jazz" },
-  { id: "hymnal",    label: "Hymnal",    icon: "🎼", color: "#448AFF", sunoStyle: "traditional hymns, sacred music, organ, choir" },
-  { id: "pop",       label: "Pop",       icon: "⭐", color: "#F50057", sunoStyle: "pop, chart music, mainstream radio ready" },
-  { id: "classical", label: "Classical", icon: "🎻", color: "#8D6E63", sunoStyle: "classical orchestral, cinematic, strings, piano" },
-  { id: "electronic",label: "Electronic",icon: "⚡", color: "#00E5FF", sunoStyle: "electronic, edm, synthwave, house, techno" },
-  { id: "country",   label: "Country",   icon: "🤠", color: "#FF8F00", sunoStyle: "country, western, folk, country soul" },
-];
+// --- Types ---
+interface Service {
+  id: string;
+  icon: React.ReactNode;
+  title: string;
+  desc: string;
+}
 
-const MOODS = ["Aggressive","Chill","Romantic","Spiritual","Energetic","Melancholy","Uplifting","Dark"];
-const BPMS  = [70, 80, 90, 100, 110, 120, 130, 140];
+interface Track {
+  id: string;
+  title: string;
+  type: string;
+  date: string;
+  duration: string;
+  status: "Ready" | "Processing" | "Failed";
+}
 
-// ============================================================
-// AUDIO VISUALIZER HOOK
-// ============================================================
-const useVisualizer = (active:boolean) => {
-  const [bars, setBars] = useState(Array(32).fill(4));
-  useEffect(() => {
-    if (!active) { setBars(Array(32).fill(4)); return; }
-    const t = setInterval(() => setBars(Array(32).fill(0).map(() => Math.random() * 80 + 4)), 80);
-    return () => clearInterval(t);
-  }, [active]);
-  return bars;
-};
-
-const Waveform = ({ active, color = "#FFB800", count = 32, height = 48 }) => {
-  const bars = useVisualizer(active);
-  return (
-    <div style={{ display:"flex", alignItems:"center", gap:2, height, overflow:"hidden" }}>
-      {bars.slice(0, count).map((h,i) => (
-        <div key={i} style={{ width:`${100/count}%`, height:`${h}%`, background:color, borderRadius:2, transition: active?"height 0.08s":"height 0.5s", opacity: 0.6 + (h/100)*0.4 }} />
-      ))}
-    </div>
-  );
-};
-
-// ============================================================
-// PAYSTACK PAYMENT INTEGRATION
-// ============================================================
-const initiatePaystackPayment = ({ trackData, email, onSuccess, onClose }) => {
-  // Paystack inline popup — loads from their CDN script
-  // Add this to your HTML head: <script src="https://js.paystack.co/v1/inline.js"></script>
-
-  if (typeof window === "undefined") return;
-
-  // Demo mode fallback if Paystack script not loaded
-  if (!window.PaystackPop) {
-    console.warn("Paystack script not loaded — running demo mode");
-    setTimeout(() => onSuccess({ reference: "demo_ref_" + Date.now() }), 1500);
-    return;
-  }
-
-  const handler = window.PaystackPop.setup({
-    key: CONFIG.PAYSTACK_PUBLIC_KEY,
-    email: email || "customer@mezie.app",
-    amount: CONFIG.PRICE_NGN * 100, // Paystack uses kobo (₦1 = 100 kobo)
-    currency: "NGN",
-    ref: "MEZIE_" + Date.now(),
-    metadata: {
-      custom_fields: [
-        { display_name: "Track Name", variable_name: "track_name", value: trackData.name },
-        { display_name: "Genre",      variable_name: "genre",      value: trackData.genre },
-        { display_name: "BPM",        variable_name: "bpm",        value: trackData.bpm },
-      ]
-    },
-    callback: (response) => onSuccess(response),
-    onClose: () => onClose(),
-  });
-
-  handler.openIframe();
-};
-
-// ============================================================
-// SUNO AI BEAT GENERATION INTEGRATION
-// ============================================================
-const generateBeatWithSuno = async (genre, mood, bpm, trackName) => {
-  const genreData = GENRES.find(g => g.id === genre);
-  const prompt = `${genreData?.sunoStyle}, ${mood.toLowerCase()} mood, ${bpm} BPM, instrumental beat, professional studio quality, no lyrics`;
-
-  try {
-    // Real Suno API call
-    const response = await fetch("https://api.suno.ai/v1/generate", {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${CONFIG.SUNO_API_KEY}`,
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        prompt,
-        make_instrumental: true,
-        model: "chirp-v3-5",
-        tags: `${genre} ${mood} ${bpm}bpm`,
-        title: trackName,
-      })
-    });
-    const data = await response.json();
-    return data?.clips?.[0]?.audio_url || null;
-  } catch {
-    // Demo mode — returns a sample audio
-    return "https://www.soundjay.com/misc/sounds/bell-ringing-05.mp3";
-  }
-};
-
-// ============================================================
-// VOCAL PROCESSING (Dolby Media API)
-// ============================================================
-const processVocals = async (audioFile) => {
-  // Real implementation uses Dolby.io Media Enhance API
-  // POST https://api.dolby.com/media/enhance
-  // This cleans, balances, and masters the vocal track
-  // In demo mode we just return a mock URL
-  return URL.createObjectURL(audioFile);
-};
-
-// ============================================================
-// PROCESSING SCREEN
-// ============================================================
-const ProcessingScreen = ({ genre, onDone }) => {
-  const [pct, setPct] = useState(0);
-  const [step, setStep] = useState(0);
-  const color = GENRES.find(g => g.id === genre)?.color || "#FFB800";
-  const steps = [
-    "Analyzing your inputs...",
-    "Crafting beat structure...",
-    "Layering instruments...",
-    "Mixing frequencies...",
-    "Mastering to industry standard...",
-    "Finalizing your track...",
-    "Almost ready..."
-  ];
-
-  useEffect(() => {
-    const prog = setInterval(() => setPct(p => { if(p >= 100){ clearInterval(prog); return 100; } return p + 0.8; }), 50);
-    const stepT = setInterval(() => setStep(s => Math.min(s+1, steps.length-1)), 700);
-    return () => { clearInterval(prog); clearInterval(stepT); };
-  }, []);
-
-  useEffect(() => { if(pct >= 100) setTimeout(onDone, 900); }, [pct]);
-
-  return (
-    <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.95)", zIndex:1000, display:"flex", alignItems:"center", justifyContent:"center", backdropFilter:"blur(12px)" }}>
-      <div style={{ background:"#0A0A0A", border:`1px solid ${color}33`, borderRadius:24, padding:48, maxWidth:400, width:"90%", textAlign:"center" }}>
-        <div style={{ marginBottom:24 }}><Waveform active={pct<100} color={color} count={28} height={64} /></div>
-        <div style={{ fontFamily:"'Bebas Neue',sans-serif", fontSize:36, color, letterSpacing:6, marginBottom:4 }}>MEZIE</div>
-        <div style={{ color:"#555", fontStyle:"italic", fontFamily:"Georgia,serif", fontSize:13, marginBottom:28 }}>crafting your sound...</div>
-        <div style={{ background:"#111", borderRadius:8, height:5, marginBottom:12, overflow:"hidden" }}>
-          <div style={{ height:"100%", width:`${pct}%`, background:`linear-gradient(90deg,${color},${color}88)`, transition:"width 0.1s", borderRadius:8, boxShadow:`0 0 12px ${color}` }} />
-        </div>
-        <div style={{ color:"#666", fontSize:12, fontFamily:"monospace", height:18 }}>{steps[step]}</div>
-        <div style={{ color:color, fontFamily:"'Bebas Neue',sans-serif", fontSize:28, letterSpacing:2, marginTop:4 }}>{Math.floor(pct)}%</div>
-        {pct >= 100 && <div style={{ marginTop:16, color:"#00E676", fontSize:15, fontFamily:"Georgia,serif", animation:"fadeIn 0.4s" }}>✓ Your track is ready!</div>}
-      </div>
-    </div>
-  );
-};
-
-// ============================================================
-// PAYMENT MODAL — PAYSTACK
-// ============================================================
-const PaymentModal = ({ trackName, genre, bpm, onPay, onClose }) => {
-  const [loading, setLoading] = useState(false);
-  const [email, setEmail] = useState("");
-  const [emailError, setEmailError] = useState("");
-  const color = GENRES.find(g => g.id === genre)?.color || "#FFB800";
-  const gLabel = GENRES.find(g => g.id === genre)?.label || genre;
-
-  const handlePay = () => {
-    if (!email || !email.includes("@")) { setEmailError("Enter a valid email address"); return; }
-    setEmailError("");
-    setLoading(true);
-    initiatePaystackPayment({
-      trackData: { name: trackName, genre, bpm },
-      email,
-      onSuccess: (response) => { setLoading(false); onPay(response); },
-      onClose: () => { setLoading(false); },
-    });
-  };
-
-  return (
-    <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.92)", zIndex:900, display:"flex", alignItems:"center", justifyContent:"center", backdropFilter:"blur(8px)" }}>
-      <div style={{ background:"#0A0A0A", border:`1px solid ${color}44`, borderRadius:22, padding:40, maxWidth:380, width:"90%", animation:"fadeIn 0.3s" }}>
-        <div style={{ textAlign:"center", marginBottom:20 }}>
-          <div style={{ fontFamily:"'Bebas Neue',sans-serif", fontSize:52, color, lineHeight:1 }}>₦4,500</div>
-          <div style={{ color:"#555", fontFamily:"Georgia,serif", fontStyle:"italic", fontSize:12, marginTop:2 }}>≈ $3 USD · one track · royalty-free forever</div>
-        </div>
-        <div style={{ background:"#111", borderRadius:10, padding:14, marginBottom:18, fontSize:12 }}>
-          <div style={{ display:"flex", justifyContent:"space-between", marginBottom:6 }}>
-            <span style={{ color:"#555" }}>Track</span><span style={{ color:"#ccc" }}>"{trackName}"</span>
-          </div>
-          <div style={{ display:"flex", justifyContent:"space-between", marginBottom:6 }}>
-            <span style={{ color:"#555" }}>Genre</span><span style={{ color }}>{gLabel}</span>
-          </div>
-          <div style={{ display:"flex", justifyContent:"space-between" }}>
-            <span style={{ color:"#555" }}>BPM</span><span style={{ color:"#ccc" }}>{bpm}</span>
-          </div>
-        </div>
-        <div style={{ marginBottom:14 }}>
-          <div style={{ fontFamily:"JetBrains Mono,monospace", fontSize:9, color:"#3a3a3a", letterSpacing:2, marginBottom:6 }}>YOUR EMAIL (for receipt)</div>
-          <input value={email} onChange={e=>{ setEmail(e.target.value); setEmailError(""); }} placeholder="you@example.com" type="email" style={{ "--ac":color, width:"100%", padding:"11px 14px", borderRadius:8, fontSize:13 }} />
-          {emailError && <div style={{ color:"#FF4D00", fontSize:10, marginTop:4 }}>{emailError}</div>}
-        </div>
-        <button onClick={handlePay} disabled={loading} style={{ width:"100%", padding:"14px", background:loading?"#1a1a1a":color, border:"none", borderRadius:10, color:loading?"#444":"#000", fontSize:13, fontWeight:900, cursor:loading?"not-allowed":"pointer", letterSpacing:2, fontFamily:"'Bebas Neue',sans-serif", transition:"all 0.2s", marginBottom:10 }}>
-          {loading ? "Opening Paystack..." : "🔒  PAY WITH PAYSTACK"}
-        </button>
-        <div style={{ display:"flex", justifyContent:"center", gap:12, marginBottom:14 }}>
-          {["💳 Card","🏦 Bank Transfer","📱 USSD"].map((m,i) => (
-            <span key={i} style={{ color:"#2a2a2a", fontSize:10, fontFamily:"monospace" }}>{m}</span>
-          ))}
-        </div>
-        <div style={{ textAlign:"center" }}>
-          <button onClick={onClose} style={{ background:"transparent", border:"none", color:"#333", fontSize:11, cursor:"pointer" }}>Cancel</button>
-        </div>
-        <div style={{ marginTop:14, textAlign:"center", color:"#1e1e1e", fontSize:10, fontFamily:"monospace" }}>
-          Secured by Paystack · CBN Licensed</div>
-      </div>
-    </div>
-  );
-};
-
-// ============================================================
-// TRACK CARD
-// ============================================================
-const TrackCard = ({ track, playing, onToggle }) => {
-  const c = track.color;
-  return (
-    <div onClick={() => onToggle(track.id)} style={{ background:"#0d0d0d", border:`1px solid ${playing?c:"#1e1e1e"}`, borderRadius:12, padding:"12px 16px", display:"flex", alignItems:"center", gap:12, cursor:"pointer", transition:"all 0.25s", boxShadow: playing?`0 0 18px ${c}33`:"none" }}>
-      <div style={{ width:40, height:40, borderRadius:8, background:`${c}18`, display:"flex", alignItems:"center", justifyContent:"center", fontSize:18, flexShrink:0 }}>{track.icon}</div>
-      <div style={{ flex:1, minWidth:0 }}>
-        <div style={{ color:"#e0e0e0", fontSize:13, fontWeight:600, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{track.name}</div>
-        <div style={{ color:"#444", fontSize:10, marginTop:2, fontFamily:"monospace" }}>{track.genre} · {track.bpm} BPM · {track.dur}</div>
-      </div>
-      {playing && <Waveform active color={c} count={8} height={22} />}
-      <div style={{ width:28, height:28, borderRadius:"50%", background:playing?c:"#1a1a1a", display:"flex", alignItems:"center", justifyContent:"center", fontSize:10, color:playing?"#000":c, border:`1px solid ${c}44`, flexShrink:0 }}>
-        {playing?"⏸":"▶"}
-      </div>
-    </div>
-  );
-};
-
-// ============================================================
-// MAIN APP
-// ============================================================
 export default function MezieApp() {
-  const [tab, setTab]               = useState("studio");
-  const [genre, setGenre]           = useState("afrobeats");
-  const [service, setService]       = useState("full");
-  const [mood, setMood]             = useState("Energetic");
-  const [bpm, setBpm]               = useState(110);
-  const [trackName, setTrackName]   = useState("");
-  const [uploaded, setUploaded]     = useState(false);
-  const [showPay, setShowPay]       = useState(false);
-  const [processing, setProcessing] = useState(false);
-  const [playingId, setPlayingId]   = useState(null);
-  const [toast, setToast]           = useState(null);
-  const [myTracks, setMyTracks]     = useState([
-    { id:1, name:"Golden Road",    genre:"Afrobeats", bpm:110, dur:"3:42", icon:"🥁", color:"#FFB800" },
-    { id:2, name:"Night Prayer",   genre:"Gospel",    bpm:80,  dur:"4:15", icon:"🙏", color:"#7C4DFF" },
-    { id:3, name:"Midnight Trap",  genre:"Hip-Hop",   bpm:140, dur:"2:58", icon:"🎤", color:"#FF4D00" },
-    { id:4, name:"Velvet Touch",   genre:"R&B",       bpm:90,  dur:"3:33", icon:"🎷", color:"#C850C0" },
+  // --- State Management ---
+  const [selectedService, setSelectedService] = useState<string>("beat");
+  const [isRecording, setIsRecording] = useState<boolean>(false);
+  const [recordingTime, setRecordingTime] = useState<number>(0);
+  const [audioUrl, setAudioUrl] = useState<string | null>(null);
+  const [isPlaying, setIsPlaying] = useState<boolean>(false);
+  const [isProcessing, setIsProcessing] = useState<boolean>(false);
+  const [prompt, setPrompt] = useState<string>("");
+  const [genre, setGenre] = useState<string>("Afrobeats");
+  const [vibe, setVibe] = useState<string>("Energetic");
+  const [lyrics, setLyrics] = useState<string>("");
+  const [mobileMenuOpen, setMobileMenuOpen] = useState<boolean>(false);
+  const [activeTab, setActiveTab] = useState<"create" | "library" | "explore">("create");
+
+  // --- Mock Data ---
+  const [myTracks, setMyTracks] = useState<Track[]>([
+    { id: "1", title: "Summer Vibes Vocal Mix", type: "Full Production", date: "2 hours ago", duration: "2:45", status: "Ready" },
+    { id: "2", title: "Late Night Late Text Beat", type: "Beat Only", date: "Yesterday", duration: "3:12", status: "Ready" },
+    { id: "3", title: "Acoustic Polish Project", type: "Voice Polish", date: "3 days ago", duration: "1:58", status: "Processing" },
   ]);
-  const fileRef = useRef();
 
-  const gData    = GENRES.find(g => g.id === genre);
-  const accent   = gData?.color || "#FFB800";
+  const services: Service[] = [
+    { id: "beat", icon: <Music className="w-5 h-5" />, title: "Beat Only", desc: "Full AI-generated beat in your chosen genre" },
+    { id: "voice", icon: <Mic className="w-5 h-5" />, title: "Voice Polish", desc: "Raw voice → studio-ready, perfectly tuned vocals" },
+    { id: "mix", icon: <Sliders className="w-5 h-5" />, title: "Mix & Master", desc: "Balance, high-end EQ, loudness, and professional clarity" },
+    { id: "full", icon: <Disc className="w-5 h-5" />, title: "Full Production", desc: "Everything – professional voice, beat mix, and master" },
+  ];
 
-  const notify = (msg, c="#00E676") => { setToast({msg,c}); setTimeout(()=>setToast(null),3000); };
+  // --- Refs & Timers ---
+  const timerRef = useRef<NodeJS.Timeout | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
-  const handleProduce = () => {
-    if (!trackName.trim()) { notify("Name your track first!", "#FF4D00"); return; }
-    setShowPay(true);
-  };
-
-  const handlePaySuccess = () => {
-    setShowPay(false);
-    setProcessing(true);
-  };
-
-  const handleProcessDone = async () => {
-    setProcessing(false);
-    const newTrack = {
-      id: Date.now(),
-      name: trackName,
-      genre: gData?.label || genre,
-      bpm,
-      dur: "3:20",
-      icon: gData?.icon || "🎵",
-      color: accent,
+  useEffect(() => {
+    if (isRecording) {
+      timerRef.current = setInterval(() => {
+        setRecordingTime((prev) => prev + 1);
+      }, 1000);
+    } else {
+      if (timerRef.current) clearInterval(timerRef.current);
+      setRecordingTime(0);
+    }
+    return () => {
+      if (timerRef.current) clearInterval(timerRef.current);
     };
-    setMyTracks(t => [newTrack, ...t]);
-    setTrackName("");
-    setUploaded(false);
-    notify("🎉 Track produced! Check My Tracks.");
-    setTab("library");
+  }, [isRecording]);
+
+  // --- Actions ---
+  const handleRecordToggle = () => {
+    setIsRecording(!isRecording);
+    if (!isRecording) {
+      setAudioUrl(null);
+    } else {
+      setAudioUrl("mock-audiourl-string");
+    }
   };
 
-  const tabs = [
-    { id:"studio",  label:"Studio",    icon:"🎛️" },
-    { id:"library", label:"My Tracks", icon:"📀" },
-    { id:"beats",   label:"Beats",     icon:"🎵" },
-    { id:"pricing", label:"Pricing",   icon:"💳" },
-  ];
+  const handleGenerate = async () => {
+    if (!prompt || !prompt.trim()) return;
+    
+    setIsProcessing(true);
+    
+    try {
+      // 1. Ping your secure Next.js backend folder with the prompt details
+      const response = await fetch("/api/generate", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          prompt: prompt,
+          genre: selectedService ? services.find(s => s.id === selectedService)?.title : "Gospel Master",
+        }),
+      });
 
-  const services = [
-    { id:"beat",  icon:"🎛️", title:"Beat Only",       desc:"Full AI-generated beat in your genre" },
-    { id:"voice", icon:"🎙️", title:"Voice Polish",    desc:"Raw voice → radio-ready vocals" },
-    { id:"mix",   icon:"🎚️", title:"Mix & Master",    desc:"Balance, EQ, loudness, clarity" },
-    { id:"full",  icon:"🚀", title:"Full Production", desc:"Everything — voice + beat + mix + master" },
-  ];
+      const data = await response.json();
+
+      if (data.success && data.audioUrl) {
+        // 2. Build a real track structure linking directly to the Replicate cloud audio stream
+        const newTrack = {
+          id: String(myTracks.length + 1),
+          title: prompt.length > 20 ? `${prompt.substring(0, 20)}... Studio` : `${prompt} Studio`,
+          type: services.find(s => s.id === selectedService)?.title || "Full Mix",
+          date: "Just now",
+          duration: "0:15",
+          status: "Ready" as const,
+          audioUrl: data.audioUrl // Streams the real audio file through your UI players
+        };
+
+        // 3. Update the tracking library list array and clear out the box
+        setMyTracks([newTrack, ...myTracks]);
+        setPrompt("");
+        setActiveTab("library"); // Flip over to the list tab so you can see your track card!
+      } else {
+        alert(`AI Audio Engine Note: ${data.error || "The processing pipeline returned an unexpected status."}`);
+      }
+    } catch (error) {
+      console.error("Network communication failure connecting to local route:", error);
+      alert("Could not communicate with your Next.js local backend route.");
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const formatTime = (seconds: number): string => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}:${secs < 10 ? "0" : ""}${secs}`;
+  };
 
   return (
-    <div style={{ minHeight:"100vh", background:"#080808", color:"#fff", fontFamily:"'Segoe UI',sans-serif", position:"relative", overflow:"hidden" }}>
+    <div style={{ minHeight: "100vh", background: "#080808", color: "#fff", fontFamily: "'Segoe UI', sans-serif", position: "relative", overflow: "hidden" }}>
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Playfair+Display:ital,wght@0,400;0,700;1,400&family=JetBrains+Mono:wght@400;600&display=swap');
         @keyframes fadeIn { from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:translateY(0)} }
         @keyframes slideDown { from{opacity:0;transform:translateY(-16px)} to{opacity:1;transform:translateY(0)} }
         @keyframes spin { to{transform:rotate(360deg)} }
         @keyframes float { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-6px)} }
-        * { box-sizing:border-box; }
-        ::-webkit-scrollbar{width:3px} ::-webkit-scrollbar-thumb{background:#222;border-radius:2px}
-        input{background:#0d0d0d!important;color:#fff!important;border:1px solid #222!important;outline:none!important;transition:border-color 0.2s!important;}
-        input:focus{border-color:var(--ac,#FFB800)!important;}
+        * { box-sizing: border-box; }
+        ::-webkit-scrollbar { width: 3px } ::-webkit-scrollbar-thumb { background: #222; border-radius: 2px }
+        input { background: #0d0d0d!important; color:#fff!important; border:1px solid #222!important; }
+        input:focus { border-color: #FFB800!important; }
       `}</style>
 
       {/* Atmosphere blobs */}
-      <div style={{ position:"fixed", inset:0, pointerEvents:"none", zIndex:0 }}>
-        <div style={{ position:"absolute", top:"-15%", left:"-10%", width:500, height:500, borderRadius:"50%", background:`radial-gradient(circle,${accent}07 0%,transparent 70%)`, transition:"background 1s" }} />
-        <div style={{ position:"absolute", bottom:"-10%", right:"-5%", width:350, height:350, borderRadius:"50%", background:`radial-gradient(circle,${accent}05 0%,transparent 70%)`, transition:"background 1s" }} />
+      <div style={{ position: "fixed", inset: 0, pointerEvents: "none", zIndex: 0 }}>
+        <div style={{ position: "absolute", top: "-15%", left: "-10%", width: 500, height: 500, borderRadius: "50%", background: "radial-gradient(circle, rgba(255,184,0,0.07) 0%, rgba(0,0,0,0) 70%)" }} />
+        <div style={{ position: "absolute", bottom: "-10%", right: "-5%", width: 350, height: 350, borderRadius: "50%", background: "radial-gradient(circle, rgba(255,50,120,0.04) 0%, rgba(0,0,0,0) 70%)" }} />
       </div>
 
-      {/* Toast */}
-      {toast && <div style={{ position:"fixed", top:16, left:"50%", transform:"translateX(-50%)", background:"#111", border:`1px solid ${toast.c}`, borderRadius:8, padding:"10px 18px", color:toast.c, zIndex:2000, fontFamily:"monospace", fontSize:12, animation:"slideDown 0.3s", boxShadow:`0 4px 20px ${toast.c}44`, whiteSpace:"nowrap" }}>{toast.msg}</div>}
-
-      {/* Overlays */}
-      {processing && <ProcessingScreen genre={genre} onDone={handleProcessDone} />}
-      {showPay && <PaymentModal trackName={trackName} genre={genre} bpm={bpm} onPay={handlePaySuccess} onClose={()=>setShowPay(false)} />}
-
-      <div style={{ position:"relative", zIndex:1, maxWidth:480, margin:"0 auto", minHeight:"100vh", display:"flex", flexDirection:"column" }}>
-
-        {/* HEADER */}
-        <div style={{ padding:"20px 20px 0", display:"flex", alignItems:"flex-start", justifyContent:"space-between" }}>
-          <div>
-            <div style={{ fontFamily:"'Bebas Neue',sans-serif", fontSize:42, letterSpacing:10, background:`linear-gradient(135deg,#fff 0%,${accent} 100%)`, WebkitBackgroundClip:"text", WebkitTextFillColor:"transparent", transition:"background 0.8s", lineHeight:1 }}>MEZIE</div>
-            <div style={{ fontFamily:"Georgia,serif", fontStyle:"italic", fontSize:11, color:"#3a3a3a", letterSpacing:2, marginTop:2 }}>your pocket recording studio</div>
+      {/* HEADER */}
+      <header style={{ position: "sticky", top: 0, background: "rgba(8,8,8,0.85)", backdropFilter: "blur(12px)", borderBottom: "1px solid #161616", zIndex: 50, padding: "0 1.5rem" }}>
+        <div style={{ maxWidth: 1300, margin: "0 auto", height: "64px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          
+          <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+            <div style={{ background: "linear-gradient(135deg, #FFB800, #FF3378)", width: 32, height: 32, borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <Radio className="w-5 h-5 text-black stroke-[2.5]" />
+            </div>
+            <span style={{ fontSize: "1.25rem", fontWeight: 800, letterSpacing: "-0.03em", background: "linear-gradient(to right, #fff, #aaa)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>
+              MEZIE
+            </span>
+            <span style={{ fontSize: "0.65rem", background: "#1a1a1a", color: "#FFB800", padding: "1px 5px", borderRadius: 4, fontWeight: 600, border: "1px solid rgba(255,184,0,0.2)" }}>PRO</span>
           </div>
-          {/* Live vinyl */}
-          <div style={{ width:72, height:72, borderRadius:"50%", background:"conic-gradient(#1a1a1a 0deg,#111 45deg,#1a1a1a 90deg,#0d0d0d 135deg,#1a1a1a 180deg,#111 225deg,#1a1a1a 270deg,#0d0d0d 315deg,#1a1a1a 360deg)", animation: playingId?"spin 2s linear infinite":"none", boxShadow: playingId?`0 0 20px ${accent}88`:"none", transition:"box-shadow 0.4s", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
-            <div style={{ width:22, height:22, borderRadius:"50%", background:accent, display:"flex", alignItems:"center", justifyContent:"center", fontSize:9 }}>{playingId?"▶":"●"}</div>
-          </div>
-        </div>
 
-        {/* TABS */}
-        <div style={{ display:"flex", gap:4, padding:"14px 20px 0", borderBottom:"1px solid #141414" }}>
-          {tabs.map(t => (
-            <button key={t.id} onClick={()=>setTab(t.id)} style={{ flex:1, background:tab===t.id?`${accent}15`:"transparent", border:`1px solid ${tab===t.id?accent+"44":"transparent"}`, borderRadius:"8px 8px 0 0", padding:"7px 2px", color:tab===t.id?accent:"#3a3a3a", fontSize:9, cursor:"pointer", transition:"all 0.2s", fontFamily:"JetBrains Mono,monospace", fontWeight:600, display:"flex", flexDirection:"column", alignItems:"center", gap:3 }}>
-              <span style={{ fontSize:13 }}>{t.icon}</span><span>{t.label}</span>
+          {/* Desktop Nav */}
+          <nav className="hidden md:flex" style={{ alignItems: "center", gap: "0.25rem" }}>
+            <button onClick={() => setActiveTab("create")} style={{ padding: "0.5rem 1rem", borderRadius: 6, fontSize: "0.9rem", fontWeight: 500, background: activeTab === "create" ? "#141414" : "transparent", color: activeTab === "create" ? "#FFB800" : "#888", border: 0, cursor: "pointer", transition: "0.2s" }}>Create</button>
+            <button onClick={() => setActiveTab("library")} style={{ padding: "0.5rem 1rem", borderRadius: 6, fontSize: "0.9rem", fontWeight: 500, background: activeTab === "library" ? "#141414" : "transparent", color: activeTab === "library" ? "#FFB800" : "#888", border: 0, cursor: "pointer", transition: "0.2s" }}>Studio Library</button>
+            <button onClick={() => setActiveTab("explore")} style={{ padding: "0.5rem 1rem", borderRadius: 6, fontSize: "0.9rem", fontWeight: 500, background: activeTab === "explore" ? "#141414" : "transparent", color: activeTab === "explore" ? "#FFB800" : "#888", border: 0, cursor: "pointer", transition: "0.2s" }}>Explore Beats</button>
+          </nav>
+
+          <div style={{ display: "flex", alignItems: "center", gap: "1rem" }}>
+            <div className="hidden sm:flex" style={{ alignItems: "center", gap: "0.5rem", background: "#111", padding: "0.35rem 0.75rem", borderRadius: 20, border: "1px solid #1c1c1c" }}>
+              <div style={{ width: 6, height: 6, borderRadius: "50%", background: "#4ade80" }} />
+              <span style={{ fontSize: "0.75rem", color: "#aaa", fontWeight: 500 }}>AI Engine Active</span>
+            </div>
+            <button style={{ background: "#fff", color: "#000", border: 0, padding: "0.5rem 1rem", borderRadius: 8, fontSize: "0.85rem", fontWeight: 600, cursor: "pointer" }}>Upgrade</button>
+            <button onClick={() => setMobileMenuOpen(!mobileMenuOpen)} className="md:hidden" style={{ background: "transparent", border: 0, color: "#fff", cursor: "pointer" }}>
+              {mobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
             </button>
-          ))}
-        </div>
-
-        {/* SCROLLABLE CONTENT */}
-        <div style={{ flex:1, overflowY:"auto", padding:"20px 20px 110px" }}>
-
-          {/* ===== STUDIO TAB ===== */}
-          {tab === "studio" && (
-            <div style={{ animation:"fadeIn 0.35s" }}>
-
-              {/* Service */}
-              <div style={{ marginBottom:18 }}>
-                <div style={{ fontFamily:"JetBrains Mono,monospace", fontSize:9, color:"#3a3a3a", letterSpacing:2, marginBottom:8 }}>SERVICE</div>
-                <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:8 }}>
-                  {services.map(s => (
-                    <div key={s.id} onClick={()=>setService(s.id)} style={{ background:service===s.id?`${accent}12`:"#0d0d0d", border:`1px solid ${service===s.id?accent:"#1c1c1c"}`, borderRadius:10, padding:12, cursor:"pointer", transition:"all 0.2s" }}>
-                      <div style={{ fontSize:18, marginBottom:4 }}>{s.icon}</div>
-                      <div style={{ color:service===s.id?accent:"#bbb", fontSize:11, fontWeight:700, marginBottom:2 }}>{s.title}</div>
-                      <div style={{ color:"#3a3a3a", fontSize:10, lineHeight:1.4 }}>{s.desc}</div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {/* Genre */}
-              <div style={{ marginBottom:18 }}>
-                <div style={{ fontFamily:"JetBrains Mono,monospace", fontSize:9, color:"#3a3a3a", letterSpacing:2, marginBottom:8 }}>GENRE</div>
-                <div style={{ display:"flex", flexWrap:"wrap", gap:5 }}>
-                  {GENRES.map(g => (
-                    <button key={g.id} onClick={()=>setGenre(g.id)} style={{ background:genre===g.id?`${g.color}22`:"#0d0d0d", border:`1px solid ${genre===g.id?g.color:"#1c1c1c"}`, borderRadius:18, padding:"5px 10px", color:genre===g.id?g.color:"#444", fontSize:11, cursor:"pointer", transition:"all 0.2s", display:"flex", alignItems:"center", gap:3 }}>
-                      <span>{g.icon}</span><span>{g.label}</span>
-                    </button>
-                  ))}
-                </div>
-                {gData && <div style={{ marginTop:6, fontSize:10, color:"#383838", fontStyle:"italic", fontFamily:"Georgia,serif" }}>→ {gData.sunoStyle.split(",").slice(0,3).join(", ")}</div>}
-              </div>
-
-              {/* Mood + BPM side by side */}
-              <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12, marginBottom:18 }}>
-                <div>
-                  <div style={{ fontFamily:"JetBrains Mono,monospace", fontSize:9, color:"#3a3a3a", letterSpacing:2, marginBottom:8 }}>MOOD</div>
-                  <div style={{ display:"flex", flexDirection:"column", gap:4 }}>
-                    {MOODS.map(m => (
-                      <button key={m} onClick={()=>setMood(m)} style={{ background:mood===m?`${accent}18`:"transparent", border:`1px solid ${mood===m?accent:"#181818"}`, borderRadius:6, padding:"5px 8px", color:mood===m?accent:"#444", fontSize:11, cursor:"pointer", textAlign:"left", transition:"all 0.2s" }}>{m}</button>
-                    ))}
-                  </div>
-                </div>
-                <div>
-                  <div style={{ fontFamily:"JetBrains Mono,monospace", fontSize:9, color:"#3a3a3a", letterSpacing:2, marginBottom:8 }}>BPM</div>
-                  <div style={{ display:"flex", flexDirection:"column", gap:4 }}>
-                    {BPMS.map(b => (
-                      <button key={b} onClick={()=>setBpm(b)} style={{ background:bpm===b?`${accent}18`:"transparent", border:`1px solid ${bpm===b?accent:"#181818"}`, borderRadius:6, padding:"5px 8px", color:bpm===b?accent:"#444", fontSize:11, cursor:"pointer", fontFamily:"monospace", textAlign:"left", transition:"all 0.2s" }}>{b} bpm</button>
-                    ))}
-                  </div>
-                </div>
-              </div>
-
-              {/* Voice upload */}
-              {(service==="voice"||service==="full") && (
-                <div style={{ marginBottom:18 }}>
-                  <div style={{ fontFamily:"JetBrains Mono,monospace", fontSize:9, color:"#3a3a3a", letterSpacing:2, marginBottom:8 }}>UPLOAD RAW VOICE</div>
-                  <div onClick={()=>fileRef.current.click()} style={{ border:`2px dashed ${uploaded?accent:"#1e1e1e"}`, borderRadius:12, padding:22, textAlign:"center", cursor:"pointer", background:uploaded?`${accent}07`:"transparent", transition:"all 0.3s" }}>
-                    <input ref={fileRef} type="file" accept="audio/*" style={{ display:"none" }} onChange={()=>{ setUploaded(true); notify("Voice loaded ✓", accent); }} />
-                    <div style={{ fontSize:26, marginBottom:6 }}>{uploaded?"🎙️":"⬆️"}</div>
-                    <div style={{ color:uploaded?accent:"#383838", fontSize:12 }}>{uploaded?"Voice ready — let's produce!":"Tap to upload your raw vocal file"}</div>
-                    <div style={{ color:"#252525", fontSize:10, marginTop:3 }}>MP3 · WAV · M4A · OGG</div>
-                  </div>
-                </div>
-              )}
-
-              {/* Track name */}
-              <div style={{ marginBottom:18 }}>
-                <div style={{ fontFamily:"JetBrains Mono,monospace", fontSize:9, color:"#3a3a3a", letterSpacing:2, marginBottom:8 }}>TRACK NAME</div>
-                <input value={trackName} onChange={e=>setTrackName(e.target.value)} placeholder="Name your track..." style={{ "--ac":accent, width:"100%", padding:"12px 14px", borderRadius:8, fontSize:14 }} />
-              </div>
-
-              {/* Live preview bars */}
-              <div style={{ background:"#0a0a0a", border:"1px solid #161616", borderRadius:12, padding:14, marginBottom:18 }}>
-                <Waveform active color={accent} count={38} height={44} />
-                <div style={{ display:"flex", justifyContent:"space-between", marginTop:6 }}>
-                  <span style={{ color:"#2a2a2a", fontSize:9, fontFamily:"monospace" }}>{gData?.label}</span>
-                  <span style={{ color:"#2a2a2a", fontSize:9, fontFamily:"monospace" }}>{mood} · {bpm} BPM</span>
-                </div>
-              </div>
-
-              {/* CTA */}
-              <button onClick={handleProduce} style={{ width:"100%", padding:"15px", background:`linear-gradient(135deg,${accent},${accent}bb)`, border:"none", borderRadius:12, color:"#000", fontSize:15, fontWeight:900, cursor:"pointer", letterSpacing:4, fontFamily:"'Bebas Neue',sans-serif", boxShadow:`0 6px 28px ${accent}55`, transition:"transform 0.1s, box-shadow 0.2s" }}
-                onMouseDown={e=>e.currentTarget.style.transform="scale(0.98)"}
-                onMouseUp={e=>e.currentTarget.style.transform="scale(1)"}>
-                🎛️ PRODUCE MY TRACK — $3
-              </button>
-              <div style={{ textAlign:"center", color:"#242424", fontSize:9, marginTop:7, fontFamily:"monospace" }}>Royalty-free · Download instantly · Yours forever</div>
-            </div>
-          )}
-
-          {/* ===== MY TRACKS TAB ===== */}
-          {tab === "library" && (
-            <div style={{ animation:"fadeIn 0.35s" }}>
-              <div style={{ color:"#383838", fontStyle:"italic", fontFamily:"Georgia,serif", fontSize:13, marginBottom:18, paddingBottom:14, borderBottom:"1px solid #141414" }}>
-                {myTracks.length} tracks in your library
-              </div>
-              <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
-                {myTracks.map(t => (
-                  <TrackCard key={t.id} track={t} playing={playingId===t.id} onToggle={id=>setPlayingId(p=>p===id?null:id)} />
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* ===== BEATS TAB ===== */}
-          {tab === "beats" && (
-            <div style={{ animation:"fadeIn 0.35s" }}>
-              <div style={{ color:"#383838", fontStyle:"italic", fontFamily:"Georgia,serif", fontSize:13, marginBottom:18 }}>MEZIE built-in beat catalog — preview free, use in any production</div>
-              {GENRES.map(g => (
-                <div key={g.id} style={{ marginBottom:18 }}>
-                  <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:8 }}>
-                    <span style={{ fontSize:14 }}>{g.icon}</span>
-                    <span style={{ fontFamily:"'Bebas Neue',sans-serif", fontSize:16, letterSpacing:2, color:g.color }}>{g.label}</span>
-                    <div style={{ flex:1, height:1, background:`${g.color}18` }} />
-                  </div>
-                  <div style={{ display:"flex", gap:6, flexWrap:"wrap" }}>
-                    {[1,2,3].map((v,i) => {
-                      const pid = `${g.id}-${i}`;
-                      const isPlay = playingId===pid;
-                      return (
-                        <div key={i} onClick={()=>setPlayingId(p=>p===pid?null:pid)} style={{ background:isPlay?`${g.color}18`:"#0d0d0d", border:`1px solid ${isPlay?g.color:"#1a1a1a"}`, borderRadius:8, padding:"8px 12px", cursor:"pointer", display:"flex", alignItems:"center", gap:8, transition:"all 0.2s" }}>
-                          <span style={{ color:g.color, fontSize:11 }}>{isPlay?"⏸":"▶"}</span>
-                          <div>
-                            <div style={{ color:"#bbb", fontSize:11 }}>{g.label} Vol.{v}</div>
-                            <div style={{ color:"#383838", fontSize:9, fontFamily:"monospace" }}>{[95,110,130][i]} BPM</div>
-                          </div>
-                          {isPlay && <Waveform active color={g.color} count={6} height={14} />}
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-
-          {/* ===== PRICING TAB ===== */}
-          {tab === "pricing" && (
-            <div style={{ animation:"fadeIn 0.35s" }}>
-              <div style={{ textAlign:"center", marginBottom:28 }}>
-                <div style={{ fontFamily:"'Bebas Neue',sans-serif", fontSize:64, letterSpacing:4, background:`linear-gradient(135deg,#fff,${accent})`, WebkitBackgroundClip:"text", WebkitTextFillColor:"transparent", lineHeight:1 }}>$3</div>
-                <div style={{ color:"#444", fontFamily:"Georgia,serif", fontStyle:"italic", fontSize:13, marginTop:2 }}>per track · no subscription · no hidden fees</div>
-              </div>
-              {[
-                ["🎛️","AI Beat Generation","Professionally crafted beat in any of 12 genres"],
-                ["🎙️","Vocal Transformation","Raw voice polished to radio-ready quality"],
-                ["🎚️","Mix & Master","Industry-standard loudness, EQ, and clarity"],
-                ["📥","Instant Download","MP3 + WAV high-quality files"],
-                ["©️","100% Royalty-Free","Distribute on Spotify, Apple Music, anywhere"],
-                ["🔁","Free Redo","Not happy? Reproduce free within 48 hours"],
-                ["☁️","Cloud Library","All tracks saved forever in your MEZIE account"],
-                ["🌍","Global Access","Works on any phone, anywhere in the world"],
-              ].map(([icon,title,desc],i) => (
-                <div key={i} style={{ display:"flex", alignItems:"flex-start", gap:12, padding:"11px 0", borderBottom:"1px solid #0f0f0f" }}>
-                  <div style={{ width:34, height:34, borderRadius:7, background:`${accent}12`, display:"flex", alignItems:"center", justifyContent:"center", fontSize:15, flexShrink:0 }}>{icon}</div>
-                  <div style={{ flex:1 }}>
-                    <div style={{ color:"#ccc", fontSize:12, fontWeight:700 }}>{title}</div>
-                    <div style={{ color:"#383838", fontSize:10, marginTop:2 }}>{desc}</div>
-                  </div>
-                  <div style={{ color:"#00E676", fontSize:13 }}>✓</div>
-                </div>
-              ))}
-              <div style={{ marginTop:22, background:`${accent}0d`, border:`1px solid ${accent}28`, borderRadius:12, padding:16, textAlign:"center" }}>
-                <div style={{ fontFamily:"Georgia,serif", fontStyle:"italic", color:"#888", fontSize:12, lineHeight:1.7 }}>
-                  "Every artist on earth deserves a world-class studio.<br/>MEZIE makes that possible for $3."
-                </div>
-                <div style={{ color:accent, fontSize:10, marginTop:8, fontFamily:"JetBrains Mono,monospace" }}>— The MEZIE Promise</div>
-              </div>
-              <button onClick={()=>setTab("studio")} style={{ width:"100%", marginTop:20, padding:"15px", background:`linear-gradient(135deg,${accent},${accent}bb)`, border:"none", borderRadius:12, color:"#000", fontSize:15, fontWeight:900, cursor:"pointer", letterSpacing:4, fontFamily:"'Bebas Neue',sans-serif", boxShadow:`0 6px 24px ${accent}55` }}>
-                START CREATING NOW
-              </button>
-            </div>
-          )}
-        </div>
-
-        {/* BOTTOM PLAYER BAR */}
-        <div style={{ position:"fixed", bottom:0, left:"50%", transform:"translateX(-50%)", width:"100%", maxWidth:480, background:"rgba(8,8,8,0.97)", borderTop:"1px solid #141414", padding:"10px 20px", display:"flex", alignItems:"center", gap:14, backdropFilter:"blur(10px)" }}>
-          <div style={{ flex:1 }}>
-            {playingId
-              ? <><Waveform active color={accent} count={22} height={22} /><div style={{ color:"#2a2a2a", fontSize:8, fontFamily:"monospace", marginTop:2 }}>NOW PLAYING</div></>
-              : <div style={{ color:"#1e1e1e", fontSize:11, fontFamily:"Georgia,serif", fontStyle:"italic" }}>No track playing</div>
-            }
           </div>
-          <div style={{ fontFamily:"'Bebas Neue',sans-serif", fontSize:18, letterSpacing:5, color:accent, opacity:0.5 }}>MEZIE</div>
         </div>
-      </div>
+      </header>
+
+      {/* Mobile Drawer */}
+      {mobileMenuOpen && (
+        <div style={{ position: "fixed", top: 64, left: 0, right: 0, background: "#0c0c0c", borderBottom: "1px solid #1a1a1a", zIndex: 40, padding: "1.5rem", display: "flex", flexDirection: "column", gap: "1rem", animation: "slideDown 0.25s ease-out" }}>
+          <button onClick={() => { setActiveTab("create"); setMobileMenuOpen(false); }} style={{ textAlign: "left", padding: "0.5rem 0", background: "none", border: 0, color: activeTab === "create" ? "#FFB800" : "#fff", fontSize: "1.1rem", fontWeight: 500 }}>Create Studio</button>
+          <button onClick={() => { setActiveTab("library"); setMobileMenuOpen(false); }} style={{ textAlign: "left", padding: "0.5rem 0", background: "none", border: 0, color: activeTab === "library" ? "#FFB800" : "#fff", fontSize: "1.1rem", fontWeight: 500 }}>My Studio Library</button>
+          <button onClick={() => { setActiveTab("explore"); setMobileMenuOpen(false); }} style={{ textAlign: "left", padding: "0.5rem 0", background: "none", border: 0, color: activeTab === "explore" ? "#FFB800" : "#fff", fontSize: "1.1rem", fontWeight: 500 }}>Explore Instrumentals</button>
+        </div>
+      )}
+
+      {/* MAIN CONTAINER */}
+      <main style={{ maxWidth: 1300, margin: "0 auto", padding: "2rem 1.5rem", position: "relative", zIndex: 10 }}>
+        
+        {/* TAB 1: CREATE ENGINE */}
+        {activeTab === "create" && (
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+            
+            {/* Control Panel Block */}
+            <div className="lg:col-span-2" style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
+              
+              {/* Top Banner */}
+              <div style={{ background: "linear-gradient(135deg, #111 0%, #0a0a0a 100%)", border: "1px solid #1a1a1a", borderRadius: 16, padding: "1.5rem", display: "flex", flexWrap: "wrap", justifyContent: "space-between", alignItems: "center", gap: "1rem" }}>
+                <div>
+                  <h1 style={{ fontSize: "1.5rem", fontWeight: 700, margin: "0 0 0.25rem 0", letterSpacing: "-0.02em" }}>Instant AI Music Producer</h1>
+                  <p style={{ margin: 0, color: "#777", fontSize: "0.85rem" }}>Record vocals, generate tracking stems, layout high-fidelity masters instantly.</p>
+                </div>
+                <div style={{ display: "flex", gap: "0.5rem" }}>
+                  <span style={{ background: "#1a0f00", border: "1px solid rgba(255,184,0,0.15)", color: "#FFB800", fontSize: "0.75rem", padding: "0.35rem 0.65rem", borderRadius: 6, fontWeight: 500 }}>NextJS 14 Engine</span>
+                  <span style={{ background: "#001205", border: "1px solid rgba(74,222,128,0.15)", color: "#4ade80", fontSize: "0.75rem", padding: "0.35rem 0.65rem", borderRadius: 6, fontWeight: 500 }}>Ultra Low Latency</span>
+                </div>
+              </div>
+
+              {/* Step 1: Services Cards */}
+              <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+                <label style={{ fontSize: "0.8rem", fontWeight: 600, color: "#666", textTransform: "uppercase", letterSpacing: "0.05em" }}>1. Choose Production Suite Mode</label>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "0.75rem" }}>
+                  {services.map((s) => {
+                    const isSelected = selectedService === s.id;
+                    return (
+                      <div 
+                        key={s.id}
+                        onClick={() => setSelectedService(s.id)}
+                        style={{
+                          background: isSelected ? "linear-gradient(180deg, #161208 0%, #0f0c05 100%)" : "#0d0d0d",
+                          border: isSelected ? "1px solid #FFB800" : "1px solid #161616",
+                          padding: "1rem",
+                          borderRadius: 12,
+                          cursor: "pointer",
+                          transition: "all 0.2s ease",
+                          boxShadow: isSelected ? "0 4px 20px rgba(255,184,0,0.05)" : "none"
+                        }}
+                      >
+                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "0.5rem" }}>
+                          <div style={{ color: isSelected ? "#FFB800" : "#888", background: isSelected ? "rgba(255,184,0,0.1)" : "#141414", padding: "0.4rem", borderRadius: 8 }}>
+                            {s.icon}
+                          </div>
+                          {isSelected && <CheckCircle2 className="w-4 h-4 text-[#FFB800]" />}
+                        </div>
+                        <h3 style={{ margin: "0 0 0.25rem 0", fontSize: "0.95rem", fontWeight: 600, color: isSelected ? "#fff" : "#eee" }}>{s.title}</h3>
+                        <p style={{ margin: 0, fontSize: "0.75rem", color: isSelected ? "#aaa" : "#555", lineHeight: 1.4 }}>{s.desc}</p>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Step 2: Audio Capture / Prompt Area */}
+              <div style={{ background: "#0d0d0d", border: "1px solid #161616", borderRadius: 16, padding: "1.5rem", display: "flex", flexDirection: "column", gap: "1.25rem" }}>
+                
+                {/* Voice Input Section conditional */}
+                {(selectedService === "voice" || selectedService === "mix" || selectedService === "full") && (
+                  <div style={{ background: "#111", border: "1px solid #1c1c1c", borderRadius: 12, padding: "1rem" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
+                      <div>
+                        <h4 style={{ margin: "0 0 0.15rem 0", fontSize: "0.9rem", fontWeight: 600 }}>Capture Studio Vocal Tracking</h4>
+                        <p style={{ margin: 0, fontSize: "0.75rem", color: "#666" }}>Record straight from your device microphone or upload raw sample stems</p>
+                      </div>
+                      {isRecording && (
+                        <div style={{ background: "rgba(239,68,68,0.1)", padding: "0.25rem 0.5rem", borderRadius: 6, display: "flex", alignItems: "center", gap: "0.35rem" }}>
+                          <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#ef4444", display: "inline-block" }} />
+                          <span style={{ fontSize: "0.75rem", color: "#ef4444", fontWeight: 600 }}>{formatTime(recordingTime)}</span>
+                        </div>
+                      )}
+                    </div>
+
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: "0.75rem", alignItems: "center" }}>
+                      <button 
+                        onClick={handleRecordToggle}
+                        style={{
+                          background: isRecording ? "#ef4444" : "rgba(255,255,255,0.04)",
+                          color: "#fff",
+                          border: isRecording ? "1px solid #ef4444" : "1px solid #222",
+                          padding: "0.6rem 1.2rem",
+                          borderRadius: 8,
+                          fontSize: "0.85rem",
+                          fontWeight: 500,
+                          cursor: "pointer",
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "0.5rem",
+                          transition: "0.2s"
+                        }}
+                      >
+                        {isRecording ? <Square className="w-4 h-4 fill-white" /> : <Mic className="w-4 h-4 text-[#FFB800]" />}
+                        {isRecording ? "Stop Tracking" : "Record Live Vocals"}
+                      </button>
+
+                      <input type="file" ref={fileInputRef} style={{ display: "none" }} accept="audio/*" />
+                      <button 
+                        onClick={() => fileInputRef.current?.click()}
+                        style={{ background: "transparent", border: "1px solid #222", padding: "0.6rem 1.2rem", borderRadius: 8, fontSize: "0.85rem", color: "#aaa", cursor: "pointer" }}
+                      >
+                        Upload Audio File (.wav, .mp3)
+                      </button>
+
+                      {audioUrl && !isRecording && (
+                        <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginLeft: "auto", background: "#161616", padding: "0.4rem 0.75rem", borderRadius: 8, border: "1px solid #222" }}>
+                          <span style={{ fontSize: "0.75rem", color: "#4ade80", fontWeight: 500 }}>Vocal File Loaded</span>
+                          <button onClick={() => setAudioUrl(null)} style={{ background: "none", border: 0, color: "#ff4444", cursor: "pointer", fontSize: "0.75rem" }}>Clear</button>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* AI Text Prompt Structure */}
+                {(selectedService === "beat" || selectedService === "full") && (
+                  <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+                    <label style={{ fontSize: "0.8rem", fontWeight: 600, color: "#666" }}>PROMPT AI COMPOSER</label>
+                    <input 
+                      type="text"
+                      placeholder="Describe the sound design (e.g., 'An upbeat modern Afrobeats track with heavy ambient synth lines and soft percussion brass')"
+                      value={prompt}
+                      onChange={(e) => setPrompt(e.target.value)}
+                      style={{ width: "100%", padding: "0.85rem 1rem", borderRadius: 10, fontSize: "0.9rem", outline: "none" }}
+                    />
+                  </div>
+                )}
+
+                {/* Optional Lyrics Panel for Full Productions */}
+                {selectedService === "full" && (
+                  <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between" }}>
+                      <label style={{ fontSize: "0.8rem", fontWeight: 600, color: "#666" }}>VOCAL TEXT / LYRICS CONTENT (OPTIONAL)</label>
+                      <span style={{ fontSize: "0.7rem", color: "#555" }}>AI will read/sing this context text</span>
+                    </div>
+                    <textarea 
+                      placeholder="Paste your lyrics here or leave completely blank for automated artificial vocalization melodies..."
+                      value={lyrics}
+                      onChange={(e) => setLyrics(e.target.value)}
+                      style={{ width: "100%", height: 80, background: "#0d0d0d", color: "#fff", border: "1px solid #222", padding: "0.75rem", borderRadius: 10, fontSize: "0.85rem", outline: "none", resize: "none" }}
+                    />
+                  </div>
+                )}
+
+                {/* Advanced Configuration Accordion Row */}
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem", borderTop: "1px solid #161616", paddingTop: "1.25rem" }}>
+                  <div style={{ display: "flex", flexDirection: "column", gap: "0.35rem" }}>
+                    <label style={{ fontSize: "0.75rem", color: "#555", fontWeight: 600 }}>GENRE TARGET</label>
+                    <select value={genre} onChange={(e) => setGenre(e.target.value)} style={{ background: "#0d0d0d", color: "#fff", border: "1px solid #222", padding: "0.5rem", borderRadius: 8, fontSize: "0.85rem", outline: "none" }}>
+                      <option>Afrobeats</option>
+                      <option>Amapiano</option>
+                      <option>Hip Hop / Trap</option>
+                      <option>R&B / Soul</option>
+                      <option>Gospel / Worship</option>
+                      <option>Reggae / Dancehall</option>
+                    </select>
+                  </div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: "0.35rem" }}>
+                    <label style={{ fontSize: "0.75rem", color: "#555", fontWeight: 600 }}>SOUND ATMOSPHERE VIBE</label>
+                    <select value={vibe} onChange={(e) => setVibe(e.target.value)} style={{ background: "#0d0d0d", color: "#fff", border: "1px solid #222", padding: "0.5rem", borderRadius: 8, fontSize: "0.85rem", outline: "none" }}>
+                      <option>Energetic / Club</option>
+                      <option>Dark & Moody</option>
+                      <option>Chill / Melodic</option>
+                      <option>Bright / Uplifting</option>
+                      <option>Cinematic / Deep</option>
+                    </select>
+                  </div>
+                </div>
+
+                {/* Primary Action Button */}
+                <button 
+                  onClick={handleGenerate}
+                  disabled={isProcessing || (selectedService === "beat" && !prompt)}
+                  style={{
+                    background: "linear-gradient(90deg, #FFB800, #FF7A00)",
+                    color: "#000",
+                    border: 0,
+                    padding: "0.9rem",
+                    borderRadius: 10,
+                    fontSize: "0.95rem",
+                    fontWeight: 700,
+                    cursor: (isProcessing || (selectedService === "beat" && !prompt)) ? "not-allowed" : "pointer",
+                    opacity: (isProcessing || (selectedService === "beat" && !prompt)) ? 0.5 : 1,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: "0.5rem",
+                    boxShadow: "0 4px 25px rgba(255,184,0,0.15)",
+                    transition: "0.2s",
+                    marginTop: "0.5rem"
+                  }}
+                >
+                  {isProcessing ? (
+                    <>
+                      <RefreshCw className="w-5 h-5 animate-spin" />
+                      Rendering High Fidelity Masters... (Takes ~4s)
+                    </>
+                  ) : (
+                    <>
+                      <Sparkles className="w-5 h-5 fill-black" />
+                      Compile & Mix Master Audio Track
+                    </>
+                  )}
+                </button>
+              </div>
+
+            </div>
+
+            {/* Sidebar Metadata Dashboard Info */}
+            <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
+              
+              {/* Profile Card Summary */}
+              <div style={{ background: "#0d0d0d", border: "1px solid #161616", borderRadius: 16, padding: "1.25rem" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", marginBottom: "1rem" }}>
+                  <div style={{ background: "#1a1a1a", width: 44, height: 44, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", border: "1px solid #222" }}>
+                    <User className="w-5 h-5 text-gray-400" />
+                  </div>
+                  <div>
+                    <h4 style={{ margin: 0, fontSize: "0.9rem", fontWeight: 600 }}>Mezie Studio Account</h4>
+                    <p style={{ margin: 0, fontSize: "0.75rem", color: "#555" }}>Free Sandbox Tier Level</p>
+                  </div>
+                </div>
+                <div style={{ background: "#141414", borderRadius: 10, padding: "0.75rem", display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.5rem", textAlign: "center" }}>
+                  <div>
+                    <div style={{ fontSize: "1.1rem", fontWeight: 700, color: "#FFB800" }}>14</div>
+                    <div style={{ fontSize: "0.65rem", color: "#666", textTransform: "uppercase" }}>Credits Remaining</div>
+                  </div>
+                  <div style={{ borderLeft: "1px solid #222" }}>
+                    <div style={{ fontSize: "1.1rem", fontWeight: 700, color: "#fff" }}>{myTracks.length}</div>
+                    <div style={{ fontSize: "0.65rem", color: "#666", textTransform: "uppercase" }}>Saved Tracks</div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Hot Tips Panel */}
+              <div style={{ background: "linear-gradient(180deg, #0d0d0d 0%, #060606 100%)", border: "1px solid #161616", borderRadius: 16, padding: "1.25rem" }}>
+                <h4 style={{ margin: "0 0 0.75rem 0", fontSize: "0.85rem", fontWeight: 600, color: "#aaa", display: "flex", alignItems: "center", gap: "0.35rem" }}>
+                  <Zap className="w-4 h-4 text-[#FFB800]" />
+                  Engine Mastering Shortcuts
+                </h4>
+                <ul style={{ margin: 0, paddingLeft: "1.1rem", fontSize: "0.8rem", color: "#666", display: "flex", flexDirection: "column", gap: "0.6rem", lineHeight: 1.4 }}>
+                  <li>For standard beats, use <strong style={{ color: "#aaa" }}>Beat Only</strong> with sensory keywords like "smooth chill guitar strings".</li>
+                  <li>When processing vocals, verify your hardware microphone gain structure is below <strong style={{ color: "#aaa" }}>-3dB</strong> to bypass ambient room clipping noise distortion layers.</li>
+                  <li>Toggle between active project tracks instantly within your saved layout catalog drawer below.</li>
+                </ul>
+              </div>
+
+            </div>
+          </div>
+        )}
+
+        {/* TAB 2: LIBRARY VIEW */}
+        {activeTab === "library" && (
+          <div style={{ background: "#0d0d0d", border: "1px solid #161616", borderRadius: 16, padding: "1.5rem", animation: "fadeIn 0.3s ease-in-out" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.5rem" }}>
+              <div>
+                <h2 style={{ fontSize: "1.25rem", fontWeight: 700, margin: "0 0 0.25rem 0" }}>Your Studio Library Catalog</h2>
+                <p style={{ margin: 0, color: "#555", fontSize: "0.8rem" }}>Manage and download generated audio clips, individual vocal stem outputs, and full project tracks.</p>
+              </div>
+              <button onClick={() => setActiveTab("create")} style={{ background: "transparent", border: "1px solid #222", padding: "0.5rem 1rem", borderRadius: 8, fontSize: "0.8rem", color: "#fff", cursor: "pointer" }}>
+                + Render New Track
+              </button>
+            </div>
+
+            <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+              {myTracks.map((track) => (
+                <div key={track.id} style={{ background: "#111", border: "1px solid #1a1a1a", padding: "1rem 1.25rem", borderRadius: 12, display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: "1rem" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: "1rem" }}>
+                    <div style={{ background: track.status === "Processing" ? "#1a1505" : "#161616", border: "1px solid #222", width: 40, height: 40, borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                      {track.status === "Processing" ? (
+                        <RefreshCw className="w-5 h-5 text-[#FFB800] animate-spin" />
+                      ) : (
+                        <Play 
+  className="w-4 h-4 text-[#FFB800] fill-[#FFB800] cursor-pointer"
+  onClick={() => {
+    const audio = new Audio(track.audioUrl);
+    audio.play();
+  }}
+/>
+                      )}
+                    </div>
+                    <div>
+                      <h4 style={{ margin: "0 0 0.2rem 0", fontSize: "0.95rem", fontWeight: 600 }}>{track.title}</h4>
+                      <div style={{ display: "flex", gap: "0.75rem", fontSize: "0.75rem", color: "#555" }}>
+                        <span style={{ color: "#888" }}>{track.type}</span>
+                        <span>•</span>
+                        <span>{track.date}</span>
+                        <span>•</span>
+                        <span>{track.duration}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div style={{ display: "flex", alignItems: "center", gap: "1rem" }}>
+                    <span style={{
+                      fontSize: "0.7rem",
+                      padding: "0.25rem 0.5rem",
+                      borderRadius: 6,
+                      fontWeight: 600,
+                      background: track.status === "Ready" ? "rgba(74,222,128,0.08)" : "rgba(255,184,0,0.08)",
+                      color: track.status === "Ready" ? "#4ade80" : "#FFB800",
+                      border: track.status === "Ready" ? "1px solid rgba(74,222,128,0.15)" : "1px solid rgba(255,184,0,0.15)"
+                    }}>
+                      {track.status}
+                    </span>
+                    <button 
+                      disabled={track.status !== "Ready"}
+                      style={{
+                        background: "none",
+                        border: "1px solid #222",
+                        padding: "0.45rem",
+                        borderRadius: 8,
+                        color: track.status === "Ready" ? "#aaa" : "#333",
+                        cursor: track.status === "Ready" ? "pointer" : "not-allowed"
+                      }}
+                    >
+                      <Download className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* TAB 3: EXPLORE BEATS */}
+        {activeTab === "explore" && (
+          <div style={{ background: "#0d0d0d", border: "1px solid #161616", borderRadius: 16, padding: "1.5rem", animation: "fadeIn 0.3s ease-in-out" }}>
+            <h2 style={{ fontSize: "1.25rem", fontWeight: 700, margin: "0 0 0.25rem 0" }}>Explore Royalty-Free Base Beats</h2>
+            <p style={{ margin: "0 0 1.5rem 0", color: "#555", fontSize: "0.8rem" }}>Select pre-engineered baseline rhythm sequences to feed straight into your voice tracking matrix.</p>
+            
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: "1rem" }}>
+              {[
+                { title: "Lagos Sunset Horizon", bpm: "102 BPM", genre: "Afrobeats", tags: ["Mellow", "Guitar"] },
+                { title: "Maputo Bass Rhythm groove", bpm: "111 BPM", genre: "Amapiano", tags: ["Log Drum", "Club"] },
+                { title: "Dark Synth Trap Sequence", bpm: "140 BPM", genre: "Hip Hop", tags: ["808", "Moody"] },
+                { title: "Chillhop Bedroom Ambient", bpm: "85 BPM", genre: "Lo-Fi", tags: ["Smooth", "Rhodes"] },
+              ].map((item, idx) => (
+                <div key={idx} style={{ background: "#111", border: "1px solid #1a1a1a", borderRadius: 12, padding: "1rem", display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+                    <div>
+                      <h4 style={{ margin: "0 0 0.15rem 0", fontSize: "0.95rem", fontWeight: 600 }}>{item.title}</h4>
+                      <span style={{ fontSize: "0.75rem", color: "#FFB800", fontWeight: 500 }}>{item.genre} • {item.bpm}</span>
+                    </div>
+                    <button style={{ background: "rgba(255,184,0,0.1)", border: 0, padding: "0.4rem", borderRadius: "50%", color: "#FFB800", cursor: "pointer" }}>
+                      <Play className="w-3 h-3 fill-[#FFB800]" />
+                    </button>
+                  </div>
+                  <div style={{ display: "flex", gap: "0.35rem" }}>
+                    {item.tags.map((t, i) => (
+                      <span key={i} style={{ background: "#181818", color: "#666", fontSize: "0.65rem", padding: "0.2rem 0.4rem", borderRadius: 4 }}>#{t}</span>
+                    ))}
+                  </div>
+                  <button 
+                    onClick={() => {
+                      setSelectedService("full");
+                      setPrompt(`Utilizing rhythm structures derived from ${item.title} baseline layout style`);
+                      setActiveTab("create");
+                    }}
+                    style={{ background: "transparent", border: "1px solid #222", padding: "0.45rem", borderRadius: 8, fontSize: "0.75rem", color: "#aaa", fontWeight: 500, cursor: "pointer", transition: "0.2s", marginTop: "0.25rem", textAlign: "center" }}
+                  >
+                    Load into Creation Suite
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+      </main>
+
+      {/* FOOTER */}
+      <footer style={{ borderTop: "1px solid #111", padding: "2rem 1.5rem", marginTop: "4rem", background: "#060606", position: "relative", zIndex: 10 }}>
+        <div style={{ maxWidth: 1300, margin: "0 auto", display: "flex", flexWrap: "wrap", justifyContent: "space-between", gap: "1.5rem", fontSize: "0.8rem", color: "#444" }}>
+          <div>
+            <span style={{ fontWeight: 700, color: "#666", letterSpacing: "0.02em" }}>MEZIE STUDIO CONTROL ENGINE</span>
+            <p style={{ margin: "0.25rem 0 0 0" }}>© 2026 Mezie Audio Labs. Artificial Intelligence Mixing, Mastering, and Stem Synthesis Framework.</p>
+          </div>
+          <div style={{ display: "flex", gap: "1rem" }}>
+            <span style={{ cursor: "pointer" }}>Documentation Manual</span>
+            <span>•</span>
+            <span style={{ cursor: "pointer" }}>Core API Gateway</span>
+            <span>•</span>
+            <span style={{ cursor: "pointer" }}>Support Engine Desk</span>
+          </div>
+        </div>
+      </footer>
     </div>
   );
 }
