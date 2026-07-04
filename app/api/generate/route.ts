@@ -24,7 +24,7 @@ export async function POST(request: Request) {
       {
         input: {
           prompt: tailoredPrompt,
-          duration: 15,
+          duration: 30,
           model_version: "melody-large",
           output_format: "mp3"
         }

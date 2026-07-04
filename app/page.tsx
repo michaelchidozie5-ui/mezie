@@ -45,6 +45,7 @@ interface Track {
   date: string;
   duration: string;
   status: "Ready" | "Processing" | "Failed";
+  audioUrl: string;
 }
 
 export default function MezieApp() {
@@ -64,9 +65,9 @@ export default function MezieApp() {
 
   // --- Mock Data ---
   const [myTracks, setMyTracks] = useState<Track[]>([
-    { id: "1", title: "Summer Vibes Vocal Mix", type: "Full Production", date: "2 hours ago", duration: "2:45", status: "Ready" },
-    { id: "2", title: "Late Night Late Text Beat", type: "Beat Only", date: "Yesterday", duration: "3:12", status: "Ready" },
-    { id: "3", title: "Acoustic Polish Project", type: "Voice Polish", date: "3 days ago", duration: "1:58", status: "Processing" },
+    { id: "1", title: "Summer Vibes Vocal Mix", type: "Full Production", date: "2 hours ago", duration: "2:45", status: "Ready", audioUrl: "" },
+{ id: "2", title: "Late Night Late Text Beat", type: "Beat Only", date: "Yesterday", duration: "3:12", status: "Ready", audioUrl: "" },
+{ id: "3", title: "Acoustic Polish Project", type: "Voice Polish", date: "3 days ago", duration: "1:58", status: "Processing", audioUrl: "" },
   ]);
 
   const services: Service[] = [
