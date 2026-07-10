@@ -54,6 +54,7 @@ export default function MezieApp() {
   const [isRecording, setIsRecording] = useState<boolean>(false);
   const [recordingTime, setRecordingTime] = useState<number>(0);
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
+  const [recordBlob, setRecordBlob] = useState<Blob | null>(null);
   const [isPlaying, setIsPlaying] = useState<boolean>(false);
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
   const [prompt, setPrompt] = useState<string>("");
@@ -96,14 +97,27 @@ export default function MezieApp() {
   }, [isRecording]);
 
   // --- Actions ---
-  const handleRecordToggle = () => {
-    setIsRecording(!isRecording);
-    if (!isRecording) {
-      setAudioUrl(null);
-    } else {
-      setAudioUrl("mock-audiourl-string");
-    }
-  };
+  
+    
+    const handleRecordToggle = async () => {
+  if (!isRecording) {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    const recorder = new MediaRecorder(stream);
+    const chunks: BlobPart[] = [];
+    recorder.ondataavailable = (e) => chunks.push(e.data);
+    recorder.onstop = () => {
+      const blob = new Blob(chunks, { type: "audio/webm" });
+      setRecordBlob(blob);
+      setAudioUrl(URL.createObjectURL(blob));
+    };
+    (window as any)._recorder = recorder;
+    recorder.start();
+    setIsRecording(true);
+  } else {
+    (window as any)._recorder?.stop();
+    setIsRecording(false);
+  }
+};  
 
   const handleGenerate = async () => {
     if (!prompt || !prompt.trim()) return;
